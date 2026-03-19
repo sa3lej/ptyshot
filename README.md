@@ -44,15 +44,16 @@ That's it. Produces `./ptyshot`.
 ## Usage
 
 ```
-ptyshot [-o output.png] [-d delay_ms] [-k keystroke] [-S snap.png]
-         [-R count:interval_ms:prefix] [-T]
-         [-w settle_ms] [-m min_ms] [-W wait_text] COLSxROWS command [args...]
+ptyshot [-V] [-o output.png] [-d delay_ms] [-k keystroke] [-S snap.png]
+        [-R count:interval_ms:prefix] [-T]
+        [-w settle_ms] [-m min_ms] [-W wait_text] COLSxROWS command [args...]
 ```
 
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `-V` | — | Print version and exit |
 | `-o FILE` | `screenshot.png` | Final output PNG path (written after all actions complete) |
 | `-d MS` | `100` | Delay between keystrokes (ms) |
 | `-k KEY` | — | Keystroke to send (repeatable, ordered with `-S` and `-R`) |
