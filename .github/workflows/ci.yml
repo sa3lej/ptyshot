@@ -23,7 +23,7 @@ jobs:
         run: make CC=${{ matrix.cc }}
 
       - name: Version check
-        run: ./ptyshot -V
+        run: ./ptyshot --version
 
       - name: Test
         run: make test

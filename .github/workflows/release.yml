@@ -28,7 +28,7 @@ jobs:
 
       - name: Test
         run: |
-          ./ptyshot -V
+          ./ptyshot --version
           make test
 
       - name: Package
