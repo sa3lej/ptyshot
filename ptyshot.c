@@ -1644,6 +1644,18 @@ main(int argc, char **argv)
 	waitpid(child, &status, 0);
 	close(master_fd);
 
+	/* Check if child failed to exec. */
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 127) {
+		fprintf(stderr, "ptyshot: command not found: %s\n", argv[0]);
+		free(t.cells);
+		free(t.alt_cells);
+		free(t.sixel_mask);
+		for (int i = 0; i < t.nimages; i++)
+			free(t.images[i].pixels);
+		free(t.dcs_buf);
+		return 1;
+	}
+
 	/* Render final output. */
 	take_snapshot(&t, output);
 
