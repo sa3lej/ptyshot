@@ -1261,7 +1261,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: ptyshot [-V] [-o output.png] [-d delay_ms] [-k keystroke]\n"
+	    "usage: ptyshot [--version] [-o output.png] [-d delay_ms] [-k keystroke]\n"
 	    "       [-w settle_ms] [-m min_ms] [-W wait_text] [-S snap.png]\n"
 	    "       [-R count:interval_ms:prefix] [-T] COLSxROWS command [args...]\n"
 	    "\n"
@@ -1446,11 +1446,15 @@ main(int argc, char **argv)
 
 	init_palette();
 
-	while ((opt = getopt(argc, argv, "+o:d:k:w:m:W:S:R:ThV")) != -1) {
-		switch (opt) {
-		case 'V':
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "--version") == 0) {
 			printf("ptyshot %s\n", VERSION);
 			exit(0);
+		}
+	}
+
+	while ((opt = getopt(argc, argv, "+o:d:k:w:m:W:S:R:Th")) != -1) {
+		switch (opt) {
 		case 'o':
 			output = optarg;
 			break;
