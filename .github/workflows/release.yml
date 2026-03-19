@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+            cc: gcc
+          - os: macos-latest
+            target: darwin-arm64
+            cc: clang
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: make CC=${{ matrix.cc }}
+
+      - name: Test
+        run: |
+          ./ptyshot -V
+          make test
+
+      - name: Package
+        run: |
+          mkdir ptyshot-${{ github.ref_name }}-${{ matrix.target }}
+          cp ptyshot LICENSE README.md ptyshot-${{ github.ref_name }}-${{ matrix.target }}/
+          zip -r ptyshot-${{ github.ref_name }}-${{ matrix.target }}.zip ptyshot-${{ github.ref_name }}-${{ matrix.target }}/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ptyshot-${{ github.ref_name }}-${{ matrix.target }}
+          path: ptyshot-${{ github.ref_name }}-${{ matrix.target }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: ptyshot-*.zip
