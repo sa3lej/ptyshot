@@ -20,7 +20,11 @@ VERSION = 0.1.0
 CC ?= gcc
 CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Wno-unused-parameter -DVERSION=\"$(VERSION)\"
 LDFLAGS =
+ifeq ($(shell uname -s),Darwin)
+LIBS = -lm
+else
 LIBS = -lutil -lm
+endif
 
 SRCS = ptyshot.c
 OBJS = $(SRCS:.c=.o)

@@ -35,7 +35,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#ifdef __APPLE__
+#include <util.h>
+#else
 #include <pty.h>
+#endif
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
