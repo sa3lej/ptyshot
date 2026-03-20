@@ -145,6 +145,7 @@ enum action_type { ACT_KEY, ACT_SNAPSHOT, ACT_RECORD };
 struct action {
 	enum action_type type;
 	char		*arg;
+	char		*rec_alloc;   /* ACT_RECORD: strdup'd buffer to free */
 	int		 rec_count;    /* ACT_RECORD: number of frames */
 	int		 rec_interval; /* ACT_RECORD: ms between frames */
 };
@@ -1049,6 +1050,15 @@ render(struct term *t, int *out_w, int *out_h)
 							b += (255-b)/3;
 							color = (r<<16)|(g<<8)|b;
 						}
+						if (c->attr & ATTR_DIM) {
+							int r = (color>>16)&0xFF;
+							int g = (color>>8)&0xFF;
+							int b = color&0xFF;
+							r /= 2;
+							g /= 2;
+							b /= 2;
+							color = (r<<16)|(g<<8)|b;
+						}
 					} else {
 						color = bg;
 					}
@@ -1300,9 +1310,9 @@ key_to_seq(const char *key)
 	if (strcasecmp(key, "down") == 0) return "\033[B";
 	if (strcasecmp(key, "right") == 0) return "\033[C";
 	if (strcasecmp(key, "left") == 0) return "\033[D";
-	if (strlen(key) == 6 && strncmp(key, "ctrl-", 5) == 0) {
+	if (strlen(key) == 6 && strncasecmp(key, "ctrl-", 5) == 0) {
 		static char ctrl[2];
-		ctrl[0] = key[5] - 'a' + 1;
+		ctrl[0] = (key[5] | 0x20) - 'a' + 1;
 		ctrl[1] = '\0';
 		return ctrl;
 	}
@@ -1509,6 +1519,7 @@ main(int argc, char **argv)
 				actions[nactions].rec_interval = 50;
 				actions[nactions].arg = NULL;
 				char *r_arg = strdup(optarg);
+				actions[nactions].rec_alloc = r_arg;
 				char *colon1 = strchr(r_arg, ':');
 				if (colon1) {
 					*colon1 = '\0';
@@ -1679,6 +1690,8 @@ main(int argc, char **argv)
 	for (int i = 0; i < t.nimages; i++)
 		free(t.images[i].pixels);
 	free(t.dcs_buf);
+	for (int i = 0; i < nactions; i++)
+		free(actions[i].rec_alloc);
 
 	return 0;
 }

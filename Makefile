@@ -65,5 +65,17 @@ test: $(TARGET)
 	@echo "=== Test: combined -W and -m ==="
 	./$(TARGET) -o /tmp/ptyshot-combined.png -W "DONE" -m 300 -w 100 80x24 bash -c 'echo "step1"; sleep 0.1; echo "step2"; sleep 0.1; echo "DONE"'
 	@test -s /tmp/ptyshot-combined.png && echo "PASS: -W + -m produced non-empty PNG" || (echo "FAIL: -W + -m produced empty/missing PNG"; exit 1)
+	@echo ""
+	@echo "=== Test: ctrl-key case insensitive (Ctrl-C, CTRL-C, ctrl-c) ==="
+	./$(TARGET) -o /tmp/ptyshot-ctrlc1.png -k 'ctrl-c' -w 200 80x24 bash -c 'cat; echo unreachable'
+	@test -s /tmp/ptyshot-ctrlc1.png && echo "PASS: ctrl-c works" || (echo "FAIL: ctrl-c"; exit 1)
+	./$(TARGET) -o /tmp/ptyshot-ctrlc2.png -k 'Ctrl-C' -w 200 80x24 bash -c 'cat; echo unreachable'
+	@test -s /tmp/ptyshot-ctrlc2.png && echo "PASS: Ctrl-C works" || (echo "FAIL: Ctrl-C"; exit 1)
+	./$(TARGET) -o /tmp/ptyshot-ctrlc3.png -k 'CTRL-C' -w 200 80x24 bash -c 'cat; echo unreachable'
+	@test -s /tmp/ptyshot-ctrlc3.png && echo "PASS: CTRL-C works" || (echo "FAIL: CTRL-C"; exit 1)
+	@echo ""
+	@echo "=== Test: dim text rendering (SGR 2) ==="
+	./$(TARGET) -o /tmp/ptyshot-dim.png -w 200 80x24 bash -c 'printf "\033[2mDIM TEXT\033[0m NORMAL"'
+	@test -s /tmp/ptyshot-dim.png && echo "PASS: dim text rendered" || (echo "FAIL: dim text"; exit 1)
 
 .PHONY: all clean test
