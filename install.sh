@@ -88,7 +88,7 @@ install_binary() {
     sudo mv -f "$BINARY_PATH" "${INSTALL_DIR}/${BINARY}"
   fi
 
-  say "Done! $(${INSTALL_DIR}/${BINARY} -V)"
+  say "Done! $(${INSTALL_DIR}/${BINARY} --version)"
   case ":$PATH:" in
     *":${INSTALL_DIR}:"*) ;;
     *) say "Note: Add ${INSTALL_DIR} to your PATH if '${BINARY}' is not found." ;;
