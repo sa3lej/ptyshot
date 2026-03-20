@@ -1,10 +1,10 @@
-# ptyshot v0.2.0
+# ptyshot v0.3.0
 
-**Headless terminal screenshot tool** — capture terminal output as PNG images without a display server.
+**Headless terminal screenshot tool** — capture terminal output as PNG, text, JSON, or base64 without a display server.
 
 ![ptyshot demo](demo.png)
 
-ptyshot spawns a command in a virtual PTY, feeds it keystrokes, and renders the final screen to a PNG file. It captures everything a real terminal would show: ANSI colors, cursor positioning, Unicode text, and SIXEL graphics. No X11, no Wayland, no framebuffer — just a single binary with zero dependencies beyond libc.
+ptyshot spawns a command in a virtual PTY, feeds it keystrokes, and renders the final screen to a PNG file — or outputs it as plain text, structured JSON, or base64-encoded PNG. It captures everything a real terminal would show: ANSI colors, cursor positioning, Unicode text, and SIXEL graphics. No X11, no Wayland, no framebuffer — just a single binary with zero dependencies beyond libc.
 
 **Use cases:**
 - **AI agent vision** — let LLMs and coding agents see what TUI applications look like by reading the PNG
@@ -278,7 +278,7 @@ For tricky apps, combine multiple flags:
 5. Executes the action sequence: sends keystrokes (`-k`) and takes snapshots (`-S`) in order
 6. SIGTERMs the child process
 7. Renders the screen to pixels: text via an embedded 8x16 bitmap font, SIXEL images composited on top
-8. Writes final PNG (`-o`) via stb_image_write.h
+8. Writes output: PNG file (`-o`), or plain text (`--text`), JSON (`--json`), or base64 PNG (`--base64`) to stdout
 
 ### Settle behavior
 
