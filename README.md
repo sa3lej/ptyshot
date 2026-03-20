@@ -44,8 +44,9 @@ That's it. Produces `./ptyshot`.
 ## Usage
 
 ```
-ptyshot [--version] [--text] [--json] [-o output.png] [-d delay_ms]
-        [-k keystroke] [-S snap.png] [-R count:interval_ms:prefix] [-T]
+ptyshot [--version] [--text] [--json] [--base64] [-o output.png]
+        [-d delay_ms] [-k keystroke] [-S snap.png]
+        [-R count:interval_ms:prefix] [-T]
         [-w settle_ms] [-m min_ms] [-W wait_text] COLSxROWS command [args...]
 ```
 
@@ -56,7 +57,8 @@ ptyshot [--version] [--text] [--json] [-o output.png] [-d delay_ms]
 | `--version` | — | Print version and exit |
 | `--text` | off | Output cell buffer as plain text to stdout (trailing whitespace trimmed) |
 | `--json` | off | Output cell buffer as JSON to stdout (`{cols, rows, cursor, cells}`) |
-| `-o FILE` | `screenshot.png` | Final output PNG path. With `--text`/`--json`, PNG is only written if `-o` is explicitly given. |
+| `--base64` | off | Output PNG as base64 to stdout (for embedding in JSON protocols) |
+| `-o FILE` | `screenshot.png` | Final output PNG path. With `--text`/`--json`/`--base64`, PNG file is only written if `-o` is explicitly given. |
 | `-d MS` | `100` | Delay between keystrokes (ms) |
 | `-k KEY` | — | Keystroke to send (repeatable, ordered with `-S` and `-R`) |
 | `-S FILE` | — | Take a snapshot at this point in the action sequence (repeatable, ordered with `-k`) |
@@ -130,6 +132,12 @@ JSON output for programmatic access to cell state:
 
 ```bash
 ./ptyshot --json -w 200 80x24 ./my-tui-app | jq '.cells[0][0].ch'
+```
+
+Base64 PNG for embedding in JSON (MCP, API responses):
+
+```bash
+./ptyshot --base64 -w 200 80x24 ./my-tui-app
 ```
 
 Both text and PNG in one run:

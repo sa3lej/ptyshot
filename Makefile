@@ -95,5 +95,9 @@ test: $(TARGET)
 	@rm -f /tmp/ptyshot-dual.png
 	./$(TARGET) --text -o /tmp/ptyshot-dual.png -w 200 80x24 bash -c 'printf "dual output\n"' 2>/dev/null | grep -q "dual output"
 	@test -s /tmp/ptyshot-dual.png && echo "PASS: --text + -o produces text and PNG" || (echo "FAIL: PNG missing"; exit 1)
+	@echo ""
+	@echo "=== Test: --base64 output ==="
+	./$(TARGET) --base64 -w 200 80x24 bash -c 'echo hello' 2>/dev/null | base64 -d | file - | grep -q "PNG image data"
+	@echo "PASS: --base64 produces valid PNG data"
 
 .PHONY: all clean test

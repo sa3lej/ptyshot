@@ -1245,6 +1245,35 @@ record_frames(struct term *t, int fd, int count, int interval_ms,
 	return (0);
 }
 
+/* Base64 encoding table. */
+static const char b64[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/* Write base64-encoded data to stdout. */
+static void
+base64_write(const unsigned char *data, int len)
+{
+	int i;
+	for (i = 0; i + 2 < len; i += 3) {
+		putchar(b64[data[i] >> 2]);
+		putchar(b64[((data[i] & 0x03) << 4) | (data[i+1] >> 4)]);
+		putchar(b64[((data[i+1] & 0x0F) << 2) | (data[i+2] >> 6)]);
+		putchar(b64[data[i+2] & 0x3F]);
+	}
+	if (i < len) {
+		putchar(b64[data[i] >> 2]);
+		if (i + 1 < len) {
+			putchar(b64[((data[i] & 0x03) << 4) | (data[i+1] >> 4)]);
+			putchar(b64[(data[i+1] & 0x0F) << 2]);
+		} else {
+			putchar(b64[(data[i] & 0x03) << 4]);
+			putchar('=');
+		}
+		putchar('=');
+	}
+	putchar('\n');
+}
+
 /* Encode a Unicode codepoint as UTF-8. Returns number of bytes written. */
 static int
 utf8_encode(uint32_t cp, char *out)
@@ -1365,6 +1394,28 @@ output_json(struct term *t)
 	puts("]}");
 }
 
+/* Output PNG as base64 to stdout. */
+static void
+output_base64(struct term *t)
+{
+	int pw, ph;
+	unsigned char *pixels = render(t, &pw, &ph);
+	if (pixels == NULL) {
+		fprintf(stderr, "ptyshot: render failed for base64 output\n");
+		return;
+	}
+	int png_len;
+	unsigned char *png = stbi_write_png_to_mem(pixels, pw * 4,
+	    pw, ph, 4, &png_len);
+	free(pixels);
+	if (png == NULL) {
+		fprintf(stderr, "ptyshot: PNG encode failed\n");
+		return;
+	}
+	base64_write(png, png_len);
+	STBIW_FREE(png);
+}
+
 /* Take a snapshot: render current screen and write PNG. */
 static int
 take_snapshot(struct term *t, const char *filename)
@@ -1391,7 +1442,8 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: ptyshot [--version] [--text] [--json] [-o output.png]\n"
+	    "usage: ptyshot [--version] [--text] [--json] [--base64]\n"
+	    "       [-o output.png]\n"
 	    "       [-d delay_ms] [-k keystroke] [-w settle_ms] [-m min_ms]\n"
 	    "       [-W wait_text] [-S snap.png] [-R count:interval_ms:prefix]\n"
 	    "       [-T] COLSxROWS command [args...]\n"
@@ -1412,7 +1464,8 @@ usage(void)
 	    "  -T          Terminal simulation: text erases SIXEL pixels.\n"
 	    "  --text      Output cell buffer as plain text to stdout.\n"
 	    "  --json      Output cell buffer as JSON to stdout.\n"
-	    "              Skips PNG unless -o is also given.\n"
+	    "  --base64    Output PNG as base64 to stdout.\n"
+	    "              These modes skip file output unless -o is also given.\n"
 	    "\n"
 	    "Animated programs:\n"
 	    "  -W \"Ready\"              Wait for known text, then capture\n"
@@ -1588,7 +1641,7 @@ main(int argc, char **argv)
 	int		 min_read = 0;
 	char		*wait_text = NULL;
 	int		 simulate = 0;
-	int		 output_mode = 0;   /* 0=png, 1=text, 2=json */
+	int		 output_mode = 0;   /* 0=png, 1=text, 2=json, 3=base64 */
 	int		 output_explicit = 0;
 	struct action	 actions[MAX_ACTIONS];
 	int		 nactions = 0;
@@ -1611,6 +1664,14 @@ main(int argc, char **argv)
 		}
 		if (strcmp(argv[i], "--json") == 0) {
 			output_mode = 2;
+			memmove(&argv[i], &argv[i+1],
+			    (argc - i - 1) * sizeof(char *));
+			argc--;
+			i--;
+			continue;
+		}
+		if (strcmp(argv[i], "--base64") == 0) {
+			output_mode = 3;
 			memmove(&argv[i], &argv[i+1],
 			    (argc - i - 1) * sizeof(char *));
 			argc--;
@@ -1829,6 +1890,8 @@ main(int argc, char **argv)
 		output_text(&t);
 	else if (output_mode == 2)
 		output_json(&t);
+	else if (output_mode == 3)
+		output_base64(&t);
 	if (output_mode == 0 || output_explicit)
 		take_snapshot(&t, output);
 
