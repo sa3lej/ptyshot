@@ -44,8 +44,8 @@ That's it. Produces `./ptyshot`.
 ## Usage
 
 ```
-ptyshot [--version] [-o output.png] [-d delay_ms] [-k keystroke] [-S snap.png]
-        [-R count:interval_ms:prefix] [-T]
+ptyshot [--version] [--text] [--json] [-o output.png] [-d delay_ms]
+        [-k keystroke] [-S snap.png] [-R count:interval_ms:prefix] [-T]
         [-w settle_ms] [-m min_ms] [-W wait_text] COLSxROWS command [args...]
 ```
 
@@ -54,7 +54,9 @@ ptyshot [--version] [-o output.png] [-d delay_ms] [-k keystroke] [-S snap.png]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--version` | — | Print version and exit |
-| `-o FILE` | `screenshot.png` | Final output PNG path (written after all actions complete) |
+| `--text` | off | Output cell buffer as plain text to stdout (trailing whitespace trimmed) |
+| `--json` | off | Output cell buffer as JSON to stdout (`{cols, rows, cursor, cells}`) |
+| `-o FILE` | `screenshot.png` | Final output PNG path. With `--text`/`--json`, PNG is only written if `-o` is explicitly given. |
 | `-d MS` | `100` | Delay between keystrokes (ms) |
 | `-k KEY` | — | Keystroke to send (repeatable, ordered with `-S` and `-R`) |
 | `-S FILE` | — | Take a snapshot at this point in the action sequence (repeatable, ordered with `-k`) |
@@ -116,6 +118,24 @@ Capture SIXEL graphics:
 
 ```bash
 ./ptyshot -o chart.png -w 1000 120x30 ./render-sixel-chart
+```
+
+Text output (no PNG, no vision API needed):
+
+```bash
+./ptyshot --text -w 200 80x24 ls --color=always /etc
+```
+
+JSON output for programmatic access to cell state:
+
+```bash
+./ptyshot --json -w 200 80x24 ./my-tui-app | jq '.cells[0][0].ch'
+```
+
+Both text and PNG in one run:
+
+```bash
+./ptyshot --text -o screenshot.png -w 200 80x24 ./my-app
 ```
 
 Wait for specific content before capturing (no timing guesswork):

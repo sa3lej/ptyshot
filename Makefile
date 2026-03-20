@@ -77,5 +77,23 @@ test: $(TARGET)
 	@echo "=== Test: dim text rendering (SGR 2) ==="
 	./$(TARGET) -o /tmp/ptyshot-dim.png -w 200 80x24 bash -c 'printf "\033[2mDIM TEXT\033[0m NORMAL"'
 	@test -s /tmp/ptyshot-dim.png && echo "PASS: dim text rendered" || (echo "FAIL: dim text"; exit 1)
+	@echo ""
+	@echo "=== Test: --text output ==="
+	./$(TARGET) --text -w 200 80x24 bash -c 'printf "Hello ptyshot\n"' 2>/dev/null | grep -q "Hello ptyshot"
+	@echo "PASS: --text contains expected text"
+	@echo ""
+	@echo "=== Test: --json output ==="
+	./$(TARGET) --json -w 200 80x24 bash -c 'echo test' 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['cols']==80 and d['rows']==24"
+	@echo "PASS: --json produces valid JSON with correct dimensions"
+	@echo ""
+	@echo "=== Test: --text suppresses default PNG ==="
+	@rm -f screenshot.png
+	./$(TARGET) --text -w 200 80x24 bash -c 'echo hi' > /dev/null 2>&1
+	@test ! -f screenshot.png && echo "PASS: no default PNG with --text" || (echo "FAIL: default PNG created"; exit 1)
+	@echo ""
+	@echo "=== Test: --text with -o produces both ==="
+	@rm -f /tmp/ptyshot-dual.png
+	./$(TARGET) --text -o /tmp/ptyshot-dual.png -w 200 80x24 bash -c 'printf "dual output\n"' 2>/dev/null | grep -q "dual output"
+	@test -s /tmp/ptyshot-dual.png && echo "PASS: --text + -o produces text and PNG" || (echo "FAIL: PNG missing"; exit 1)
 
 .PHONY: all clean test

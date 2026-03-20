@@ -1245,6 +1245,126 @@ record_frames(struct term *t, int fd, int count, int interval_ms,
 	return (0);
 }
 
+/* Encode a Unicode codepoint as UTF-8. Returns number of bytes written. */
+static int
+utf8_encode(uint32_t cp, char *out)
+{
+	if (cp < 0x80) {
+		out[0] = cp;
+		return 1;
+	} else if (cp < 0x800) {
+		out[0] = 0xC0 | (cp >> 6);
+		out[1] = 0x80 | (cp & 0x3F);
+		return 2;
+	} else if (cp < 0x10000) {
+		out[0] = 0xE0 | (cp >> 12);
+		out[1] = 0x80 | ((cp >> 6) & 0x3F);
+		out[2] = 0x80 | (cp & 0x3F);
+		return 3;
+	} else if (cp < 0x110000) {
+		out[0] = 0xF0 | (cp >> 18);
+		out[1] = 0x80 | ((cp >> 12) & 0x3F);
+		out[2] = 0x80 | ((cp >> 6) & 0x3F);
+		out[3] = 0x80 | (cp & 0x3F);
+		return 4;
+	}
+	out[0] = '?';
+	return 1;
+}
+
+/* Output cell buffer as plain text to stdout. */
+static void
+output_text(struct term *t)
+{
+	int last_row = -1;
+	char u8[4];
+
+	/* Find last non-blank row. */
+	for (int y = t->rows - 1; y >= 0; y--) {
+		for (int x = 0; x < t->cols; x++) {
+			uint32_t ch = t->cells[y * t->cols + x].ch;
+			if (ch != 0 && ch != ' ') {
+				last_row = y;
+				goto found_last;
+			}
+		}
+	}
+found_last:
+
+	for (int y = 0; y <= last_row; y++) {
+		int last_col = -1;
+		/* Find last non-space column. */
+		for (int x = t->cols - 1; x >= 0; x--) {
+			uint32_t ch = t->cells[y * t->cols + x].ch;
+			if (ch != 0 && ch != ' ' &&
+			    t->cells[y * t->cols + x].width != 0) {
+				last_col = x;
+				break;
+			}
+		}
+		for (int x = 0; x <= last_col; x++) {
+			struct cell *c = &t->cells[y * t->cols + x];
+			if (c->width == 0)
+				continue; /* skip wide char continuation */
+			uint32_t ch = c->ch ? c->ch : ' ';
+			int n = utf8_encode(ch, u8);
+			fwrite(u8, 1, n, stdout);
+		}
+		putchar('\n');
+	}
+}
+
+/* Write a JSON-escaped UTF-8 string for a single codepoint. */
+static void
+json_write_char(uint32_t cp, FILE *f)
+{
+	if (cp == '"')
+		fputs("\\\"", f);
+	else if (cp == '\\')
+		fputs("\\\\", f);
+	else if (cp < 0x20) {
+		fprintf(f, "\\u%04X", cp);
+	} else {
+		char u8[4];
+		int n = utf8_encode(cp, u8);
+		fwrite(u8, 1, n, f);
+	}
+}
+
+/* Output cell buffer as JSON to stdout. */
+static void
+output_json(struct term *t)
+{
+	printf("{\"cols\":%d,\"rows\":%d,\"cursor\":{\"x\":%d,\"y\":%d},\"cells\":[",
+	    t->cols, t->rows, t->cx, t->cy);
+
+	for (int y = 0; y < t->rows; y++) {
+		if (y > 0)
+			putchar(',');
+		putchar('[');
+		for (int x = 0; x < t->cols; x++) {
+			struct cell *c = &t->cells[y * t->cols + x];
+			if (x > 0)
+				putchar(',');
+			fputs("{\"ch\":\"", stdout);
+			if (c->width == 0)
+				; /* empty string for continuation */
+			else
+				json_write_char(c->ch ? c->ch : ' ', stdout);
+			printf("\",\"fg\":\"#%06X\",\"bg\":\"#%06X\","
+			    "\"bold\":%s,\"dim\":%s,"
+			    "\"reverse\":%s,\"underline\":%s}",
+			    c->fg & 0xFFFFFF, c->bg & 0xFFFFFF,
+			    (c->attr & ATTR_BRIGHT) ? "true" : "false",
+			    (c->attr & ATTR_DIM) ? "true" : "false",
+			    (c->attr & ATTR_REVERSE) ? "true" : "false",
+			    (c->attr & ATTR_UNDERLINE) ? "true" : "false");
+		}
+		putchar(']');
+	}
+	puts("]}");
+}
+
 /* Take a snapshot: render current screen and write PNG. */
 static int
 take_snapshot(struct term *t, const char *filename)
@@ -1271,9 +1391,10 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "usage: ptyshot [--version] [-o output.png] [-d delay_ms] [-k keystroke]\n"
-	    "       [-w settle_ms] [-m min_ms] [-W wait_text] [-S snap.png]\n"
-	    "       [-R count:interval_ms:prefix] [-T] COLSxROWS command [args...]\n"
+	    "usage: ptyshot [--version] [--text] [--json] [-o output.png]\n"
+	    "       [-d delay_ms] [-k keystroke] [-w settle_ms] [-m min_ms]\n"
+	    "       [-W wait_text] [-S snap.png] [-R count:interval_ms:prefix]\n"
+	    "       [-T] COLSxROWS command [args...]\n"
 	    "\n"
 	    "Options:\n"
 	    "  -o FILE     Output PNG path (default: screenshot.png)\n"
@@ -1289,6 +1410,9 @@ usage(void)
 	    "  -R N:MS:PFX Record mode: capture N frames at MS intervals.\n"
 	    "              Saves PFX_000.png through PFX_NNN.png.\n"
 	    "  -T          Terminal simulation: text erases SIXEL pixels.\n"
+	    "  --text      Output cell buffer as plain text to stdout.\n"
+	    "  --json      Output cell buffer as JSON to stdout.\n"
+	    "              Skips PNG unless -o is also given.\n"
 	    "\n"
 	    "Animated programs:\n"
 	    "  -W \"Ready\"              Wait for known text, then capture\n"
@@ -1464,6 +1588,8 @@ main(int argc, char **argv)
 	int		 min_read = 0;
 	char		*wait_text = NULL;
 	int		 simulate = 0;
+	int		 output_mode = 0;   /* 0=png, 1=text, 2=json */
+	int		 output_explicit = 0;
 	struct action	 actions[MAX_ACTIONS];
 	int		 nactions = 0;
 	struct winsize	 ws;
@@ -1475,12 +1601,29 @@ main(int argc, char **argv)
 			printf("ptyshot %s\n", VERSION);
 			exit(0);
 		}
+		if (strcmp(argv[i], "--text") == 0) {
+			output_mode = 1;
+			memmove(&argv[i], &argv[i+1],
+			    (argc - i - 1) * sizeof(char *));
+			argc--;
+			i--;
+			continue;
+		}
+		if (strcmp(argv[i], "--json") == 0) {
+			output_mode = 2;
+			memmove(&argv[i], &argv[i+1],
+			    (argc - i - 1) * sizeof(char *));
+			argc--;
+			i--;
+			continue;
+		}
 	}
 
 	while ((opt = getopt(argc, argv, "+o:d:k:w:m:W:S:R:Th")) != -1) {
 		switch (opt) {
 		case 'o':
 			output = optarg;
+			output_explicit = 1;
 			break;
 		case 'd':
 			key_delay = atoi(optarg);
@@ -1682,7 +1825,12 @@ main(int argc, char **argv)
 	}
 
 	/* Render final output. */
-	take_snapshot(&t, output);
+	if (output_mode == 1)
+		output_text(&t);
+	else if (output_mode == 2)
+		output_json(&t);
+	if (output_mode == 0 || output_explicit)
+		take_snapshot(&t, output);
 
 	free(t.cells);
 	free(t.alt_cells);
