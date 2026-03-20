@@ -1,4 +1,4 @@
-# ptyshot v0.1.0
+# ptyshot v0.2.0
 
 **Headless terminal screenshot tool** — capture terminal output as PNG images without a display server.
 
