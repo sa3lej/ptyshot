@@ -167,6 +167,80 @@ Debug SIXEL flicker with true terminal simulation:
 
 The `-T` flag makes ptyshot behave like a real terminal: writing text to a cell erases any SIXEL pixels at that position. Combined with `-R`, this captures per-`read()` snapshots showing the exact intermediate states — including frames where ratatui's character write has erased SIXEL pixels but the SIXEL re-emission hasn't arrived yet.
 
+## Animated programs
+
+Terminal programs with animations, progress bars, or continuous redraws need different capture strategies than static output. ptyshot provides several mechanisms — use them alone or combined.
+
+### Wait for known text (`-W`)
+
+If you know what the screen looks like when it's "ready", this is the most reliable approach. ptyshot watches for the text to appear, then captures:
+
+```bash
+# Wait for shell prompt
+./ptyshot -o app.png -W "$ " 80x24 bash
+
+# Wait for app to finish loading
+./ptyshot -o dashboard.png -W "Ready" 120x40 ./my-dashboard
+```
+
+### Minimum read time (`-m`)
+
+For apps that animate at startup, `-m` ensures ptyshot reads output for at least N milliseconds before considering the screen settled. Without it, a brief pause in the animation can trigger a premature capture:
+
+```bash
+# Read for at least 2 seconds, then capture when output stops
+./ptyshot -o splash.png -m 2000 80x24 ./animated-splash
+
+# Combine with shorter settle for responsive capture after the minimum
+./ptyshot -o app.png -m 2000 -w 200 80x24 ./my-app
+```
+
+### Longer settle time (`-w`)
+
+Increase the settle timeout for apps with bursty output that pauses briefly between frames:
+
+```bash
+# Default 500ms may be too short — wait 2s of silence instead
+./ptyshot -o report.png -w 2000 80x24 ./slow-renderer
+```
+
+### Record multiple frames (`-R`)
+
+Capture a burst of frames to see the animation unfold. This is ideal for debugging or documenting animated behavior:
+
+```bash
+# Capture 20 frames at 100ms intervals
+./ptyshot -R 20:100:/tmp/anim 80x24 ./my-animated-app
+# Produces /tmp/anim_000.png through /tmp/anim_019.png
+
+# Record after sending a keystroke
+./ptyshot -k 'enter' -R 15:200:/tmp/transition 80x24 ./my-app
+```
+
+### Combining strategies
+
+For tricky apps, combine multiple flags:
+
+```bash
+# Wait for "Menu", read 1.5s minimum, then capture when stable
+./ptyshot -o menu.png -W "Menu" -m 1500 -w 100 120x40 ./my-tui-app
+
+# Capture title screen, send keystroke, record the transition
+./ptyshot -S title.png -k 'enter' -R 10:150:/tmp/transition -o final.png \
+  120x40 ./my-tui-app
+```
+
+### Quick reference
+
+| Problem | Solution |
+|---------|----------|
+| App has a known ready state (prompt, status text) | `-W "text"` |
+| App animates at startup, captures too early | `-m 2000` (read for 2s minimum) |
+| App has bursty output with brief pauses | `-w 2000` (longer settle time) |
+| Need to see the animation, not just the final frame | `-R 20:100:prefix` (record 20 frames) |
+| App loads slowly then stops | `-m 3000 -w 200` (wait 3s, then settle quickly) |
+| Need the exact moment specific content appears | `-W "text" -w 30` (wait for text, capture immediately) |
+
 ## How it works
 
 1. Creates a PTY at the specified dimensions (cols x rows, 8x16 pixels per cell). Sets `ws_xpixel` and `ws_ypixel` in the winsize so child processes can detect pixel-level graphics support.

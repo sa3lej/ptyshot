@@ -46,5 +46,24 @@ test: $(TARGET)
 	./$(TARGET) -o /tmp/ptyshot-test.png -w 200 80x24 bash -c 'echo "Hello from ptyshot!"; echo "SIXEL support built-in."'
 	@echo "Output: /tmp/ptyshot-test.png"
 	@ls -la /tmp/ptyshot-test.png
+	@echo ""
+	@echo "=== Test: minimum read time (-m) ==="
+	./$(TARGET) -o /tmp/ptyshot-minread.png -m 500 -w 200 80x24 bash -c 'echo "frame1"; sleep 0.2; echo "frame2"'
+	@test -s /tmp/ptyshot-minread.png && echo "PASS: -m produced non-empty PNG" || (echo "FAIL: -m produced empty/missing PNG"; exit 1)
+	@echo ""
+	@echo "=== Test: wait for text (-W) ==="
+	./$(TARGET) -o /tmp/ptyshot-waittext.png -W "READY" -w 100 80x24 bash -c 'echo "loading..."; sleep 0.3; echo "READY"'
+	@test -s /tmp/ptyshot-waittext.png && echo "PASS: -W produced non-empty PNG" || (echo "FAIL: -W produced empty/missing PNG"; exit 1)
+	@echo ""
+	@echo "=== Test: record mode (-R) ==="
+	@rm -f /tmp/ptyshot-rec_000.png /tmp/ptyshot-rec_001.png /tmp/ptyshot-rec_002.png
+	./$(TARGET) -o /tmp/ptyshot-rec-final.png -w 200 -k 'enter' -R 3:100:/tmp/ptyshot-rec 80x24 bash -c 'read -p "go: "; echo "line1"; sleep 0.2; echo "line2"; sleep 0.2; echo "line3"; sleep 1'
+	@test -s /tmp/ptyshot-rec_000.png && echo "PASS: -R frame 0 exists" || (echo "FAIL: -R frame 0 missing"; exit 1)
+	@test -s /tmp/ptyshot-rec_001.png && echo "PASS: -R frame 1 exists" || (echo "FAIL: -R frame 1 missing"; exit 1)
+	@test -s /tmp/ptyshot-rec_002.png && echo "PASS: -R frame 2 exists" || (echo "FAIL: -R frame 2 missing"; exit 1)
+	@echo ""
+	@echo "=== Test: combined -W and -m ==="
+	./$(TARGET) -o /tmp/ptyshot-combined.png -W "DONE" -m 300 -w 100 80x24 bash -c 'echo "step1"; sleep 0.1; echo "step2"; sleep 0.1; echo "DONE"'
+	@test -s /tmp/ptyshot-combined.png && echo "PASS: -W + -m produced non-empty PNG" || (echo "FAIL: -W + -m produced empty/missing PNG"; exit 1)
 
 .PHONY: all clean test

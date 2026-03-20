@@ -1265,12 +1265,26 @@ usage(void)
 	    "       [-w settle_ms] [-m min_ms] [-W wait_text] [-S snap.png]\n"
 	    "       [-R count:interval_ms:prefix] [-T] COLSxROWS command [args...]\n"
 	    "\n"
-	    "  -R count:interval_ms:prefix\n"
-	    "       Record mode: capture count frames at interval_ms apart.\n"
-	    "       Saves as prefix_000.png, prefix_001.png, etc.\n"
-	    "       Reads PTY data between frames without waiting for settle.\n"
-	    "  -T   True terminal simulation: text writes erase SIXEL pixels.\n"
-	    "       Use with -R to capture SIXEL flicker bugs.\n");
+	    "Options:\n"
+	    "  -o FILE     Output PNG path (default: screenshot.png)\n"
+	    "  -d MS       Delay between consecutive keystrokes (default: 100)\n"
+	    "  -k KEY      Send keystroke (repeatable, ordered with -S and -R)\n"
+	    "  -S FILE     Snapshot at this point in the action sequence\n"
+	    "  -w MS       Settle wait: no output for MS means screen is ready\n"
+	    "              (default: 500). Increase for slow-rendering apps.\n"
+	    "  -m MS       Minimum read time before settling is allowed (default: 0).\n"
+	    "              Use for animated apps: -m 2000 reads for at least 2s.\n"
+	    "  -W TEXT     Wait until TEXT appears on screen before capturing.\n"
+	    "              Best for apps with known ready state (prompt, status).\n"
+	    "  -R N:MS:PFX Record mode: capture N frames at MS intervals.\n"
+	    "              Saves PFX_000.png through PFX_NNN.png.\n"
+	    "  -T          Terminal simulation: text erases SIXEL pixels.\n"
+	    "\n"
+	    "Animated programs:\n"
+	    "  -W \"Ready\"              Wait for known text, then capture\n"
+	    "  -m 2000                 Read for 2s minimum, then settle\n"
+	    "  -m 2000 -w 200          Read 2s, then wait for 200ms silence\n"
+	    "  -R 10:100:/tmp/frames   Capture 10 frames at 100ms intervals\n");
 	exit(1);
 }
 
