@@ -1,6 +1,11 @@
 # Build artifacts
 ptyshot
 *.o
+tests/test_vt
+tests/test_font
+tests/test_render
+tests/test_sixel
+tests/test_integration
 
 # Dolt database files (added by bd init)
 .dolt/
