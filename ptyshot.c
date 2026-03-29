@@ -25,7 +25,7 @@
  */
 
 #ifndef VERSION
-#define VERSION "0.3.0"
+#define VERSION "0.4.0"
 #endif
 
 #include <sys/types.h>
@@ -49,7 +49,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifndef PTYSHOT_TEST
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#endif
 #include "vendor/stb_image_write.h"
 #include "font8x16.h"
 
@@ -73,6 +75,7 @@ struct cell {
 #define ATTR_DIM	0x02
 #define ATTR_REVERSE	0x04
 #define ATTR_UNDERLINE	0x08
+#define ATTR_ITALIC	0x10
 
 /* SIXEL image stored after decoding. */
 struct sixel_img {
@@ -88,6 +91,19 @@ struct term {
 	struct cell	*cells;
 	uint32_t	 fg, bg;
 	uint8_t		 attr;
+
+	/* Scroll region (DECSTBM). 0-indexed, inclusive. */
+	int		 scroll_top;
+	int		 scroll_bottom;	/* -1 = not set (use rows-1) */
+
+	/* Saved cursor (DECSC/DECRC). */
+	int		 saved_cx, saved_cy;
+	uint32_t	 saved_fg, saved_bg;
+	uint8_t		 saved_attr;
+	int		 cursor_saved;	/* 1 if DECSC has been called */
+
+	/* Cursor visibility (DECTCEM mode 25). */
+	int		 cursor_visible; /* 1 = visible (default) */
 
 	/* Alternate screen buffer. */
 	struct cell	*alt_cells;
@@ -213,22 +229,48 @@ term_clear_line(struct term *t, int y, int from, int to)
 	}
 }
 
+/* Effective scroll region bottom (0-indexed, inclusive). */
+static int
+scroll_bot(struct term *t)
+{
+	return t->scroll_bottom >= 0 ? t->scroll_bottom : t->rows - 1;
+}
+
+/* Scroll lines within the scroll region up by one. */
 static void
 term_scroll_up(struct term *t)
 {
-	memmove(t->cells, t->cells + t->cols,
-	    (t->rows - 1) * t->cols * sizeof(struct cell));
-	term_clear_line(t, t->rows - 1, 0, t->cols);
+	int top = t->scroll_top;
+	int bot = scroll_bot(t);
+	if (top >= bot) return;
+	memmove(t->cells + top * t->cols,
+	    t->cells + (top + 1) * t->cols,
+	    (bot - top) * t->cols * sizeof(struct cell));
+	term_clear_line(t, bot, 0, t->cols);
+}
+
+/* Scroll lines within the scroll region down by one. */
+static void
+term_scroll_down(struct term *t)
+{
+	int top = t->scroll_top;
+	int bot = scroll_bot(t);
+	if (top >= bot) return;
+	memmove(t->cells + (top + 1) * t->cols,
+	    t->cells + top * t->cols,
+	    (bot - top) * t->cols * sizeof(struct cell));
+	term_clear_line(t, top, 0, t->cols);
 }
 
 static void
 term_newline(struct term *t)
 {
+	int bot = scroll_bot(t);
 	t->cx = 0;
-	t->cy++;
-	if (t->cy >= t->rows) {
+	if (t->cy == bot) {
 		term_scroll_up(t);
-		t->cy = t->rows - 1;
+	} else if (t->cy < t->rows - 1) {
+		t->cy++;
 	}
 }
 
@@ -641,6 +683,78 @@ term_csi(struct term *t, char final)
 		else if (p0 == 2)
 			term_clear_line(t, t->cy, 0, t->cols);
 		break;
+	case 'L': { /* IL — insert lines */
+		int n = p0 > 0 ? p0 : 1;
+		int bot = scroll_bot(t);
+		if (t->cy >= t->scroll_top && t->cy <= bot) {
+			/* Shift lines down from cy..bot-n to cy+n..bot. */
+			if (t->cy + n <= bot) {
+				memmove(t->cells + (t->cy + n) * t->cols,
+				    t->cells + t->cy * t->cols,
+				    (bot - t->cy - n + 1) * t->cols * sizeof(struct cell));
+			}
+			/* Clear the inserted lines. */
+			for (int i = 0; i < n && t->cy + i <= bot; i++)
+				term_clear_line(t, t->cy + i, 0, t->cols);
+		}
+		break;
+	}
+	case 'M': { /* DL — delete lines */
+		int n = p0 > 0 ? p0 : 1;
+		int bot = scroll_bot(t);
+		if (t->cy >= t->scroll_top && t->cy <= bot) {
+			/* Shift lines up from cy+n..bot to cy..bot-n. */
+			if (t->cy + n <= bot) {
+				memmove(t->cells + t->cy * t->cols,
+				    t->cells + (t->cy + n) * t->cols,
+				    (bot - t->cy - n + 1) * t->cols * sizeof(struct cell));
+			}
+			/* Clear the vacated lines at bottom of region. */
+			for (int i = 0; i < n && bot - i >= t->cy; i++)
+				term_clear_line(t, bot - i, 0, t->cols);
+		}
+		break;
+	}
+	case '@': { /* ICH — insert characters */
+		int n = p0 > 0 ? p0 : 1;
+		if (n > t->cols - t->cx) n = t->cols - t->cx;
+		/* Shift characters right from cx..cols-n to cx+n..cols. */
+		if (t->cx + n < t->cols) {
+			memmove(cell_at(t, t->cx + n, t->cy),
+			    cell_at(t, t->cx, t->cy),
+			    (t->cols - t->cx - n) * sizeof(struct cell));
+		}
+		/* Clear the inserted positions. */
+		for (int i = 0; i < n; i++) {
+			struct cell *c = cell_at(t, t->cx + i, t->cy);
+			c->ch = ' ';
+			c->fg = t->fg;
+			c->bg = t->bg;
+			c->attr = 0;
+			c->width = 1;
+		}
+		break;
+	}
+	case 'P': { /* DCH — delete characters */
+		int n = p0 > 0 ? p0 : 1;
+		if (n > t->cols - t->cx) n = t->cols - t->cx;
+		/* Shift characters left from cx+n..cols to cx..cols-n. */
+		if (t->cx + n < t->cols) {
+			memmove(cell_at(t, t->cx, t->cy),
+			    cell_at(t, t->cx + n, t->cy),
+			    (t->cols - t->cx - n) * sizeof(struct cell));
+		}
+		/* Clear the vacated positions at end of line. */
+		for (int i = 0; i < n; i++) {
+			struct cell *c = cell_at(t, t->cols - 1 - i, t->cy);
+			c->ch = ' ';
+			c->fg = t->fg;
+			c->bg = t->bg;
+			c->attr = 0;
+			c->width = 1;
+		}
+		break;
+	}
 	case 'c': /* DA — device attributes */
 		if (t->esc_inter == '>') {
 			/* DA2 (secondary device attributes). */
@@ -672,10 +786,20 @@ term_csi(struct term *t, char final)
 				t->attr |= ATTR_BRIGHT;
 			} else if (p == 2) {
 				t->attr |= ATTR_DIM;
+			} else if (p == 3) {
+				t->attr |= ATTR_ITALIC;
 			} else if (p == 4) {
 				t->attr |= ATTR_UNDERLINE;
 			} else if (p == 7) {
 				t->attr |= ATTR_REVERSE;
+			} else if (p == 22) {
+				t->attr &= ~(ATTR_BRIGHT | ATTR_DIM);
+			} else if (p == 23) {
+				t->attr &= ~ATTR_ITALIC;
+			} else if (p == 24) {
+				t->attr &= ~ATTR_UNDERLINE;
+			} else if (p == 27) {
+				t->attr &= ~ATTR_REVERSE;
 			} else if (p >= 30 && p <= 37) {
 				t->fg = palette256[p - 30];
 			} else if (p == 38 && i + 2 < t->nparams &&
@@ -729,12 +853,29 @@ term_csi(struct term *t, char final)
 			term_respond(t, "\033[0n");
 		}
 		break;
-	case 'r': /* DECSTBM — set scrolling region (ignore for now) */
+	case 'r': /* DECSTBM — set scrolling region */
+		if (t->nparams == 0 || (p0 == 0 && p1 == 0)) {
+			/* Reset scroll region to full screen. */
+			t->scroll_top = 0;
+			t->scroll_bottom = -1;
+		} else {
+			int top = (p0 > 0 ? p0 : 1) - 1;
+			int bot = (p1 > 0 ? p1 : t->rows) - 1;
+			if (top < bot && bot < t->rows) {
+				t->scroll_top = top;
+				t->scroll_bottom = bot;
+			}
+		}
+		/* DECSTBM resets cursor to home position. */
+		t->cx = 0;
+		t->cy = 0;
 		break;
 	case 'l': /* DECRST / RM */
 		if (t->esc_inter == '?' && t->nparams > 0) {
 			int mode = t->params[0];
-			if ((mode == 1049 || mode == 1047 || mode == 47) &&
+			if (mode == 25) {
+				t->cursor_visible = 0;
+			} else if ((mode == 1049 || mode == 1047 || mode == 47) &&
 			    t->using_alt && t->alt_cells != NULL) {
 				/* Leave alternate screen — swap back. */
 				struct cell *tmp = t->cells;
@@ -752,7 +893,9 @@ term_csi(struct term *t, char final)
 	case 'h': /* DECSET / SM */
 		if (t->esc_inter == '?' && t->nparams > 0) {
 			int mode = t->params[0];
-			if ((mode == 1049 || mode == 1047 || mode == 47) &&
+			if (mode == 25) {
+				t->cursor_visible = 1;
+			} else if ((mode == 1049 || mode == 1047 || mode == 47) &&
 			    !t->using_alt) {
 				/* Enter alternate screen. */
 				if (t->alt_cells == NULL) {
@@ -834,10 +977,11 @@ term_feed(struct term *t, unsigned char ch)
 		} else if (ch == '\r') {
 			t->cx = 0;
 		} else if (ch == '\n') {
-			t->cy++;
-			if (t->cy >= t->rows) {
+			int bot = scroll_bot(t);
+			if (t->cy == bot) {
 				term_scroll_up(t);
-				t->cy = t->rows - 1;
+			} else if (t->cy < t->rows - 1) {
+				t->cy++;
 			}
 		} else if (ch == '\t') {
 			t->cx = (t->cx + 8) & ~7;
@@ -876,6 +1020,25 @@ term_feed(struct term *t, unsigned char ch)
 			t->dcs_buf = NULL;
 			t->dcs_len = 0;
 			t->dcs_cap = 0;
+		} else if (ch == '7') {
+			/* DECSC — save cursor position and attributes. */
+			t->saved_cx = t->cx;
+			t->saved_cy = t->cy;
+			t->saved_fg = t->fg;
+			t->saved_bg = t->bg;
+			t->saved_attr = t->attr;
+			t->cursor_saved = 1;
+			t->state = S_GROUND;
+		} else if (ch == '8') {
+			/* DECRC — restore cursor position and attributes. */
+			if (t->cursor_saved) {
+				t->cx = t->saved_cx;
+				t->cy = t->saved_cy;
+				t->fg = t->saved_fg;
+				t->bg = t->saved_bg;
+				t->attr = t->saved_attr;
+			}
+			t->state = S_GROUND;
 		} else if (ch == '(' || ch == ')') {
 			t->state = S_ESC_INTER;
 		} else if (ch == '=') {
@@ -1033,8 +1196,15 @@ render(struct term *t, int *out_w, int *out_h)
 
 			for (int gy = 0; gy < CELL_H; gy++) {
 				unsigned char row = glyph[gy];
+				/* Italic: shear glyph rightward (top rows
+				 * shift more, creating a lean effect). */
+				int italic_shift = 0;
+				if (c->attr & ATTR_ITALIC)
+					italic_shift = (CELL_H - 1 - gy) / 5;
 				for (int gx = 0; gx < CELL_W; gx++) {
-					int px_x = x * CELL_W + gx;
+					int px_x = x * CELL_W + gx + italic_shift;
+					if (px_x >= (x + 1) * CELL_W)
+						px_x = (x + 1) * CELL_W - 1;
 					int px_y = y * CELL_H + gy;
 					int off = (px_y * pw + px_x) * 4;
 					uint32_t color;
@@ -1080,6 +1250,25 @@ render(struct term *t, int *out_w, int *out_h)
 					px[off+2] = fg & 0xFF;
 					px[off+3] = 0xFF;
 				}
+			}
+		}
+	}
+
+	/* Render cursor block if visible. */
+	if (t->cursor_visible && t->cx >= 0 && t->cx < t->cols &&
+	    t->cy >= 0 && t->cy < t->rows) {
+		struct cell *cc = cell_at(t, t->cx, t->cy);
+		uint32_t cur_fg = cc->fg;
+		/* Draw a block cursor by inverting the cell. */
+		for (int gy = 0; gy < CELL_H; gy++) {
+			for (int gx = 0; gx < CELL_W; gx++) {
+				int cpx = t->cx * CELL_W + gx;
+				int cpy = t->cy * CELL_H + gy;
+				int off = (cpy * pw + cpx) * 4;
+				/* XOR with foreground color for visibility. */
+				px[off+0] ^= (cur_fg >> 16) & 0xFF;
+				px[off+1] ^= (cur_fg >> 8) & 0xFF;
+				px[off+2] ^= cur_fg & 0xFF;
 			}
 		}
 	}
@@ -1381,11 +1570,12 @@ output_json(struct term *t)
 			else
 				json_write_char(c->ch ? c->ch : ' ', stdout);
 			printf("\",\"fg\":\"#%06X\",\"bg\":\"#%06X\","
-			    "\"bold\":%s,\"dim\":%s,"
+			    "\"bold\":%s,\"dim\":%s,\"italic\":%s,"
 			    "\"reverse\":%s,\"underline\":%s}",
 			    c->fg & 0xFFFFFF, c->bg & 0xFFFFFF,
 			    (c->attr & ATTR_BRIGHT) ? "true" : "false",
 			    (c->attr & ATTR_DIM) ? "true" : "false",
+			    (c->attr & ATTR_ITALIC) ? "true" : "false",
 			    (c->attr & ATTR_REVERSE) ? "true" : "false",
 			    (c->attr & ATTR_UNDERLINE) ? "true" : "false");
 		}
@@ -1629,6 +1819,7 @@ drain_pty(struct term *t, int fd, int settle_ms, int wait_first, int min_ms,
 	return (0); /* timeout — settled */
 }
 
+#ifndef PTYSHOT_TEST
 int
 main(int argc, char **argv)
 {
@@ -1774,6 +1965,8 @@ main(int argc, char **argv)
 	t.fg = 0xAAAAAA;
 	t.bg = 0x0C0C16;
 	t.pty_fd = -1;
+	t.scroll_bottom = -1;
+	t.cursor_visible = 1;
 	t.simulate_terminal = simulate;
 	t.cells = calloc(cols * rows, sizeof(struct cell));
 	if (t.cells == NULL) { perror("calloc"); exit(1); }
@@ -1906,3 +2099,4 @@ main(int argc, char **argv)
 
 	return 0;
 }
+#endif /* !PTYSHOT_TEST */

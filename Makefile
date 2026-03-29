@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-VERSION = 0.3.0
+VERSION = 0.4.0
 
 CC ?= gcc
 CFLAGS = -std=gnu99 -O2 -Wall -Wextra -Wno-unused-parameter -DVERSION=\"$(VERSION)\"
@@ -100,4 +100,38 @@ test: $(TARGET)
 	./$(TARGET) --base64 -w 200 80x24 bash -c 'echo hello' 2>/dev/null | base64 -d | file - | grep -q "PNG image data"
 	@echo "PASS: --base64 produces valid PNG data"
 
-.PHONY: all clean test
+# --- Unit and integration test suite ---
+TEST_CFLAGS = -std=gnu99 -g -O0 -Wall -Wextra -Wno-unused-parameter \
+              -DPTYSHOT_TEST -DVERSION=\"test\"
+
+tests/test_vt: tests/test_vt.c ptyshot.c font8x16.h tests/test.h
+	$(CC) $(TEST_CFLAGS) -o $@ tests/test_vt.c $(LIBS)
+
+tests/test_font: tests/test_font.c ptyshot.c font8x16.h tests/test.h
+	$(CC) $(TEST_CFLAGS) -o $@ tests/test_font.c $(LIBS)
+
+tests/test_render: tests/test_render.c ptyshot.c font8x16.h tests/test.h
+	$(CC) $(TEST_CFLAGS) -o $@ tests/test_render.c $(LIBS)
+
+tests/test_sixel: tests/test_sixel.c ptyshot.c font8x16.h tests/test.h
+	$(CC) $(TEST_CFLAGS) -o $@ tests/test_sixel.c $(LIBS)
+
+tests/test_integration: tests/test_integration.c vendor/stb_image.h $(TARGET)
+	$(CC) $(TEST_CFLAGS) -o $@ tests/test_integration.c -lm
+
+test-unit: tests/test_vt tests/test_font tests/test_render tests/test_sixel
+	@echo ""
+	@tests/test_vt && tests/test_font && tests/test_render && tests/test_sixel
+
+test-integration: tests/test_integration
+	@echo ""
+	@tests/test_integration
+
+test-all: test-unit test-integration
+	@echo ""
+	@echo "=== All tests passed ==="
+
+test-clean:
+	rm -f tests/test_vt tests/test_font tests/test_render tests/test_sixel tests/test_integration
+
+.PHONY: all clean test test-unit test-integration test-all test-clean
