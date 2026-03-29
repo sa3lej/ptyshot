@@ -258,6 +258,45 @@ For tricky apps, combine multiple flags:
   120x40 ./my-tui-app
 ```
 
+### Real-world examples
+
+**htop** — continuously redraws, never settles on its own. Use `-m` to let it render fully, then capture:
+
+```bash
+./ptyshot -o htop.png -m 2000 -w 200 -k 'q' 120x35 htop
+```
+
+**asciiquarium** — animated screensaver with no "done" state. Use `-m` to watch for a few seconds, then grab a frame:
+
+```bash
+./ptyshot -o aquarium.png -m 3000 -w 100 80x24 asciiquarium
+```
+
+Or record a burst of frames to pick the best one:
+
+```bash
+./ptyshot -m 2000 -R 10:500:/tmp/aquarium 80x24 asciiquarium
+```
+
+**top** — similar to htop, redraws every few seconds:
+
+```bash
+./ptyshot -o top.png -m 2000 -w 200 -k 'q' 80x24 top
+```
+
+**cmatrix** — continuous animation, capture after it fills the screen:
+
+```bash
+./ptyshot -o matrix.png -m 2000 -w 100 -k 'q' 80x24 cmatrix
+```
+
+**Apps with splash screens or loading bars** — wait for the UI to be ready:
+
+```bash
+# Wait for the main screen, skip past the splash
+./ptyshot -o app.png -W "Ready" -m 1500 -w 100 120x40 ./my-tui-app
+```
+
 ### Quick reference
 
 | Problem | Solution |
@@ -265,6 +304,7 @@ For tricky apps, combine multiple flags:
 | App has a known ready state (prompt, status text) | `-W "text"` |
 | App animates at startup, captures too early | `-m 2000` (read for 2s minimum) |
 | App has bursty output with brief pauses | `-w 2000` (longer settle time) |
+| App never stops redrawing (htop, cmatrix) | `-m 2000 -w 200` (read 2s, then settle on first pause) |
 | Need to see the animation, not just the final frame | `-R 20:100:prefix` (record 20 frames) |
 | App loads slowly then stops | `-m 3000 -w 200` (wait 3s, then settle quickly) |
 | Need the exact moment specific content appears | `-W "text" -w 30` (wait for text, capture immediately) |
